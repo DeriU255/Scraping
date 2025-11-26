@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Scraper de Ofertas",
+  "version": "1.0",
+  "description": "Extensión básica para extraer productos y guardarlos en IndexedDB",
+  "permissions": ["activeTab"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
