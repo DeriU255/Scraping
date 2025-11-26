@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 250px; padding: 15px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    h3 { margin-top: 0; color: #333; }
+    button { width: 100%; padding: 10px; margin-bottom: 10px; border: none; cursor: pointer; font-weight: bold; border-radius: 4px; }
+    #btnStart { background-color: #28a745; color: white; }
+    #btnStart:hover { background-color: #218838; }
+    #btnStop { background-color: #dc3545; color: white; display: none; }
+    #btnStop:hover { background-color: #c82333; }
+    .stats { background: #f8f9fa; padding: 10px; border-radius: 4px; border: 1px solid #dee2e6; margin-top: 10px; }
+    .stat-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
+    .stat-value { font-weight: bold; color: #007bff; }
+    #status { margin-top: 10px; font-size: 12px; text-align: center; color: #666; }
+  </style>
+</head>
+<body>
+  <h3>Scraper Masivo</h3>
+  <p>Objetivo: 1000 productos</p>
+  
+  <button id="btnStart">Iniciar Auto-Scroll</button>
+  <button id="btnStop">Detener</button>
+
+  <div class="stats">
+    <div class="stat-item">
+      <span>Productos:</span>
+      <span id="count" class="stat-value">0</span>
+    </div>
+  </div>
+
+  <div id="status">Listo para empezar</div>
+  <script src="popup.js"></script>
+</body>
+</html>

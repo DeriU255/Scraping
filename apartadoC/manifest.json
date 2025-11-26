@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Scraper Masivo",
+  "version": "1.0",
+  "description": "Scraper con auto-scroll para capturar +1000 productos",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
