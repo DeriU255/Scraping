@@ -2,21 +2,26 @@ let isScrapingActive = false;
 let isPaused = false;
 const TARGET_COUNT = 1000;
 
-//Recuperar estado al cargar (para persistencia entre páginas)
-chrome.storage.local.get(['scrapingState'], function(result) {
-    //Auto-iniciar si estamos en una web soportada y el estado es activo
+//Limpio el estado al cargar para evitar auto-arranque no deseado
+
+//Persistencia de sesión inteligente
+chrome.storage.local.get(['scrapingState', 'navigatingByScript'], function(result) {
     const esWebSoportada = window.location.hostname.includes("pccomponentes") || window.location.hostname.includes("chollometro");
     
-    if(result.scrapingState === 'active' && esWebSoportada){
-        console.log("Recuperando sesión de scraping...");
+    //Si estaba activo y fue una navegación provocada por el script, continúa
+    if (result.scrapingState === 'active' && result.navigatingByScript && esWebSoportada) {
+        console.log("Continuando scraping tras navegación automática...");
         isScrapingActive = true;
-        //Pequeño delay para carga del DOM
+        //Reset de flag de navegación para que un F5 manual lo detenga
+        chrome.storage.local.set({ navigatingByScript: false });
         setTimeout(loopScraping, 2000);
-    }else if(result.scrapingState === 'active' && !esWebSoportada) {
-        //Si está activo pero en una web no soportada, lo desactivo
-        console.log("Scraping desactivado por estar en web no soportada.");
+    } else {
+        //Si estaba activo pero NO fue navegación del script (ej.F5), para
+        if(result.scrapingState === 'active') {
+            console.log("Scraping detenido por recarga manual o navegación externa.");
+        }
         isScrapingActive = false;
-        chrome.storage.local.set({ scrapingState: 'stopped' });
+        chrome.storage.local.set({ scrapingState: 'stopped', navigatingByScript: false });
     }
 });
 
@@ -71,19 +76,18 @@ function extraerDatos(){
     const productos = [];
     const esPcComponentes = window.location.hostname.includes("pccomponentes");
     
-    // Selectores más amplios
     let items;
     if (esPcComponentes) {
-        // PcComponentes: Tarjetas de producto
+        //PcComponentes
         items = document.querySelectorAll(".c-product-card, article.product-card, .product-card");
     } else {
-        // Chollometro y genéricos
+        //Chollometro
         items = document.querySelectorAll("article, .thread, .product-card");
     }
 
     items.forEach((item, index) => {
         try{
-            //Ignorar elementos vacíos o de publicidad si no tienen info relevante
+            //Ignora elementos vacíos o de publicidad si no tienen info relevante
             if(item.classList.contains("AdHolder")) return;
 
             let titulo = "Sin título";
@@ -232,6 +236,9 @@ async function loopScraping(){
 
             if(nextButton){
                 console.log("Botón siguiente encontrado, clickando...");
+                // MARCAR NAVEGACIÓN AUTOMÁTICA
+                chrome.storage.local.set({ navigatingByScript: true });
+
                 if(nextButton.href) {
                     window.location.href = nextButton.href;
                 } else {
@@ -262,6 +269,9 @@ async function loopScraping(){
                     
                     if(nextPage <= maxPages){ 
                         console.log(`Intentando forzar navegación a página ${nextPage}...`);
+                        // MARCAR NAVEGACIÓN AUTOMÁTICA
+                        chrome.storage.local.set({ navigatingByScript: true });
+
                         currentUrl.searchParams.set("page", nextPage);
                         window.location.href = currentUrl.toString();
                         await new Promise(r => setTimeout(r, 5000));
@@ -315,6 +325,9 @@ async function loopScraping(){
                         if(pageParam){
                             const nextPage = parseInt(pageParam) + 1;
                             console.log(`Forzando navegación URL a página ${nextPage}`);
+                            // MARCAR NAVEGACIÓN AUTOMÁTICA
+                            chrome.storage.local.set({ navigatingByScript: true });
+
                             currentUrl.searchParams.set("page", nextPage);
                             window.location.href = currentUrl.toString();
                             await new Promise(r => setTimeout(r, 4000));
