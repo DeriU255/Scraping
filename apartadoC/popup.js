@@ -1,14 +1,17 @@
 document.addEventListener('DOMContentLoaded', () => {
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
+    const btnPause = document.getElementById('btnPause');
     const statusDiv = document.getElementById('status');
     const countSpan = document.getElementById('count');
+
+    let isPaused = false;
 
     //Escucha mensajes desde content.js
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if(request.action === "updateProgress"){
             countSpan.textContent = request.count;
-            statusDiv.textContent = "Escaneando y bajando...";
+            if(!isPaused) statusDiv.textContent = "Escaneando y bajando...";
         }else if(request.action === "finished"){
             statusDiv.textContent = "¡Meta alcanzada o finalizado!";
             toggleButtons(false);
@@ -24,9 +27,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusDiv.textContent = "Error: Recarga la página.";
             }else{
                 statusDiv.textContent = "Iniciando...";
+                isPaused = false;
+                btnPause.textContent = "Pausar";
                 toggleButtons(true);
             }
         });
+    });
+
+    btnPause.addEventListener('click', async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if(!isPaused){
+            chrome.tabs.sendMessage(tab.id, { action: "pauseScraping" });
+            statusDiv.textContent = "Pausado";
+            btnPause.textContent = "Reanudar";
+            isPaused = true;
+        } else {
+            chrome.tabs.sendMessage(tab.id, { action: "resumeScraping" });
+            statusDiv.textContent = "Reanudando...";
+            btnPause.textContent = "Pausar";
+            isPaused = false;
+        }
     });
 
     btnStop.addEventListener('click', async () => {
@@ -40,9 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if(isRunning){
             btnStart.style.display = 'none';
             btnStop.style.display = 'block';
+            btnPause.style.display = 'block';
         }else{
             btnStart.style.display = 'block';
             btnStop.style.display = 'none';
+            btnPause.style.display = 'none';
         }
     }
 });

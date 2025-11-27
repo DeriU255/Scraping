@@ -1,13 +1,22 @@
 let isScrapingActive = false;
+let isPaused = false;
 const TARGET_COUNT = 1000;
 
-// Recuperar estado al cargar (para persistencia entre páginas)
+//Recuperar estado al cargar (para persistencia entre páginas)
 chrome.storage.local.get(['scrapingState'], function(result) {
-    if (result.scrapingState === 'active') {
+    //Auto-iniciar si estamos en una web soportada y el estado es activo
+    const esWebSoportada = window.location.hostname.includes("pccomponentes") || window.location.hostname.includes("chollometro");
+    
+    if(result.scrapingState === 'active' && esWebSoportada){
         console.log("Recuperando sesión de scraping...");
         isScrapingActive = true;
-        // Pequeño delay para asegurar carga del DOM
+        //Pequeño delay para carga del DOM
         setTimeout(loopScraping, 2000);
+    }else if(result.scrapingState === 'active' && !esWebSoportada) {
+        //Si está activo pero en una web no soportada, lo desactivo
+        console.log("Scraping desactivado por estar en web no soportada.");
+        isScrapingActive = false;
+        chrome.storage.local.set({ scrapingState: 'stopped' });
     }
 });
 
@@ -60,13 +69,13 @@ async function contarProductos(){
 //Lógica de Extracción Mejorada y Multi-Web
 function extraerDatos(){
     const productos = [];
-    const esAmazon = window.location.hostname.includes("amazon");
+    const esPcComponentes = window.location.hostname.includes("pccomponentes");
     
     // Selectores más amplios
     let items;
-    if (esAmazon) {
-        // Amazon: Resultados de búsqueda estándar y cuadrícula
-        items = document.querySelectorAll(".s-result-item[data-component-type='s-search-result'], .s-result-item");
+    if (esPcComponentes) {
+        // PcComponentes: Tarjetas de producto
+        items = document.querySelectorAll(".c-product-card, article.product-card, .product-card");
     } else {
         // Chollometro y genéricos
         items = document.querySelectorAll("article, .thread, .product-card");
@@ -83,29 +92,35 @@ function extraerDatos(){
             let url = window.location.href;
             let idUnico = "";
 
-            if(esAmazon){
+            if(esPcComponentes){
                 //Título
-                const tituloEl = item.querySelector("h2 span") || item.querySelector("h2 a") || item.querySelector(".a-text-normal");
+                const tituloEl = item.querySelector(".c-product-card__title") || item.querySelector("h3") || item.querySelector(".product-card__title");
                 if(tituloEl) titulo = tituloEl.innerText.trim();
 
                 //Precio
-                const precioEl = item.querySelector(".a-price .a-offscreen") || item.querySelector(".a-price span");
+                const precioEl = item.querySelector(".c-product-card__price-now") || 
+                                 item.querySelector(".c-product-card__prices-actual") || 
+                                 item.querySelector(".product-card__price") ||
+                                 item.querySelector("span[data-e2e='price-card']") ||
+                                 item.querySelector("div[class*='price'] span");
+                                 
                 if(precioEl) precio = precioEl.innerText.trim();
 
                 //Imagen
-                const imgEl = item.querySelector(".s-image");
-                if(imgEl) img = imgEl.src;
+                const imgEl = item.querySelector("img.c-product-card__image") || item.querySelector("img");
+                if(imgEl) img = imgEl.src || imgEl.dataset.src;
 
                 //URL
-                const linkEl = item.querySelector("a.a-link-normal.s-no-outline") || item.querySelector("h2 a");
+                const linkEl = item.querySelector("a.c-product-card__title-link") || item.querySelector("a");
                 if(linkEl) {
                     url = linkEl.href;
-                    //Intenta sacar el ASIN de la URL o del item
-                    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
-                    if(asinMatch) idUnico = asinMatch[1];
+                    //ID único desde data-id o URL
+                    idUnico = item.getAttribute("data-id");
+                    if(!idUnico) {
+                        const idMatch = url.match(/\/(\d+)-/); // Suele ser /12345-nombre-producto
+                        if(idMatch) idUnico = idMatch[1];
+                    }
                 }
-                
-                if(!idUnico) idUnico = item.getAttribute("data-asin");
 
             } else {
                 //Título
@@ -163,6 +178,12 @@ async function loopScraping(){
     let lastTotal = 0;
 
     while(isScrapingActive){
+        //Pausa
+        if(isPaused){
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+        }
+
         //Extrae y Guarda
         const productosEnPantalla = extraerDatos();
         
@@ -193,60 +214,64 @@ async function loopScraping(){
         }
 
         //Navegación / Scroll
-        const esAmazon = window.location.hostname.includes("amazon");
+        const esPcComponentes = window.location.hostname.includes("pccomponentes");
         
-        if(esAmazon){
-            //Amazon: Scroll al fondo para ver paginación
+        if(esPcComponentes){
+            //Scroll al fondo para ver paginación
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
             await new Promise(r => setTimeout(r, 2000));
 
-            //Si no hemos extraído nada en esta vuelta, algo va mal (Captcha o fin)
+            //Si no hemos extraído nada en esta vuelta, algo va mal
             if(productosEnPantalla.length === 0 && noNewItemsCount > 1){
-                alert("No se detectan productos. Puede que hayas llegado al final o haya un CAPTCHA. \n\nPor favor, resuelve el Captcha o cambia de búsqueda manualmente.");
-                await new Promise(r => setTimeout(r, 5000));
-                continue;
+                console.log("No se detectan productos nuevos...");
             }
 
-            //Selectores múltiples para el botón "Siguiente"
-            const nextButton = document.querySelector(".s-pagination-next:not(.s-pagination-disabled)") || 
-                               document.querySelector("a.s-pagination-item.s-pagination-next") ||
-                               document.querySelector("li.a-last a");
+            const nextButton = document.querySelector("a[data-testid='pagination-next']") || 
+                               document.querySelector(".c-pagination__next") ||
+                               document.querySelector("a[aria-label='Página siguiente']");
 
             if(nextButton){
                 console.log("Botón siguiente encontrado, clickando...");
-                //Forzar navegación si es un link
                 if(nextButton.href) {
                     window.location.href = nextButton.href;
                 } else {
                     nextButton.click();
                 }
-                //Esperar carga (el script se detendrá aquí si la página recarga)
                 await new Promise(r => setTimeout(r, 5000)); 
             }else{
-                console.log("No se encontró botón siguiente en Amazon.");
-                
-                //INTENTO DE NAVEGACIÓN FORZADA POR URL (Bypass de límite de página 10)
+                console.log("No se encontró botón siguiente en PcComponentes.");
+
                 const currentUrl = new URL(window.location.href);
                 let pageParam = currentUrl.searchParams.get("page");
                 
-                //Si no hay param page pero hay búsqueda, estamos en la 1
-                if(!pageParam && window.location.search.includes("k=")) pageParam = "1";
+                if(!pageParam) pageParam = "0";
 
-                if(pageParam){
-                    const nextPage = parseInt(pageParam) + 1;
-                    //Límite de seguridad
-                    if(nextPage <= 20){ 
+                //Detectar máximo de páginas
+                let maxPages = 50; // Valor por defecto seguro
+                const paginationItems = document.querySelectorAll(".c-pagination__item, a[data-testid^='pagination-link-']");
+                if(paginationItems.length > 0){
+                    //Intentar obtener el último número
+                    const lastItem = paginationItems[paginationItems.length - 1];
+                    const lastPageNum = parseInt(lastItem.innerText);
+                    if(!isNaN(lastPageNum)) maxPages = lastPageNum;
+                }
+                console.log(`Máximo de páginas detectado: ${maxPages}`);
+
+                if(pageParam || !window.location.search.includes("page=")){
+                    const nextPage = pageParam ? parseInt(pageParam) + 1 : 1;
+                    
+                    if(nextPage <= maxPages){ 
                         console.log(`Intentando forzar navegación a página ${nextPage}...`);
                         currentUrl.searchParams.set("page", nextPage);
                         window.location.href = currentUrl.toString();
                         await new Promise(r => setTimeout(r, 5000));
-                    }else{
-                        alert("Límite de paginación automática alcanzado. \n\n¡Cambia de búsqueda (ej: de 'portátiles' a 'ratones') para seguir sumando hasta 1000!");
-                        await new Promise(r => setTimeout(r, 5000));
+                    } else {
+                        console.log("Se ha alcanzado la última página detectada.");
+                        alert("Parece que hemos llegado al final de las páginas disponibles en esta categoría.");
+                        isScrapingActive = false;
+                        chrome.storage.local.set({ scrapingState: 'stopped' });
+                        break;
                     }
-                }else{
-                    window.scrollBy(0, -500);
-                    await new Promise(r => setTimeout(r, 1000));
                 }
             }
         }else{
@@ -315,8 +340,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
     }else if(request.action === "stopScraping"){
         isScrapingActive = false;
+        isPaused = false;
         chrome.storage.local.set({ scrapingState: 'stopped' });
         sendResponse({ status: "stopped" });
+    }else if(request.action === "pauseScraping"){
+        isPaused = true;
+        sendResponse({ status: "paused" });
+    }else if(request.action === "resumeScraping"){
+        isPaused = false;
+        sendResponse({ status: "resumed" });
     }
     return true;
 });
